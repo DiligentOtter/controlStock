@@ -1,0 +1,1 @@
+// aqui se genera el codigo para asentar la infomacion en local stororage
