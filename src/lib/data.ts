@@ -90,6 +90,14 @@ export const insumosIniciales: Insumo[]=[
         stockActual:200,
         minimoCritico:30
     },
+    {
+        id:'granoCafe200g',
+        nombre: "Grano de cafe 200g",
+        unidad:'bolsa',
+        retornable:false,
+        stockActual:20,
+        minimoCritico:3
+    }
     
 ]
 export const productosIniciales: Producto[] = [
@@ -127,6 +135,16 @@ export const productosIniciales: Producto[] = [
         { insumoId: 'cocaCola', cantidad: 0.35 },
         { insumoId: 'vaso500', cantidad: 1 },
         { insumoId: 'hielo', cantidad: 0.1 },
+        ],
+    },
+    {
+        id:'cafe200ml',
+        nombre: 'Cafe 200ml',
+        precio: 5000,
+        activo: true,
+        ingredientes: [
+        { insumoId: 'granoCafe200g', cantidad: 0.02 },
+        { insumoId: 'vaso200', cantidad: 1 },
         ],
     },
 ]

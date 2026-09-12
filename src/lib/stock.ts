@@ -1,9 +1,6 @@
-//esta es como una fat class, tiene todas las responsabilidades de la logica de negocio, 
-// y no tiene nada que ver con la UI, ni con la persistencia de datos, ni con la red, ni con nada de eso. 
-// Solo se encarga de la logica de negocio.
-
+//esta es como una fat class, por que tiene muchas responsabilidades
 import type {Insumo, Producto, Transaccion, EstadoApp} from "./data";
-import {estadoInicial} from "./data";
+
 
 
 function descontarStock(insumoId:string, cantidad:number, estadoActual:EstadoApp): EstadoApp | null{
@@ -16,7 +13,7 @@ function descontarStock(insumoId:string, cantidad:number, estadoActual:EstadoApp
     const insumosDesc: Insumo[] = estadoActual.insumosAc.map(
         (p)=>{if (p.id === insumoId) {
             if (p.retornable) {
-                return {...p,stockActual: p.stockActual - cantidad, enUso: Math.max(0, (p.enUso || 0) + cantidad)}
+                return {...p,stockActual: p.stockActual - cantidad, enUso: (p.enUso || 0) + cantidad}
             }
             return {...p, stockActual: p.stockActual - cantidad}
         }else return p;
@@ -103,14 +100,19 @@ function agregarProducto(producto: Producto, estadoActual: EstadoApp): EstadoApp
     return { ...estadoActual, productosAc: productosActualizados };
 }
 
-export {descontarStock, registrarVenta, reingresoRetornables, ingresarInsumo, agregarProducto};
+function estadoStockActual(estadoAppAc: EstadoApp|null, insumoId:string):'rojo'|'verde'|'amarillo'|null{
+    const insumoPedido: Insumo | undefined = estadoAppAc?.insumosAc.find((p)=>p.id===insumoId)
 
-/*codigo de prueba, test*/
-const newState: EstadoApp | null = registrarVenta("jarraFernet2l", "efectivo", estadoInicial, null);
-
-if (!newState) {
-    console.log("La venta falló");
-} else {
-    console.log(newState.transacciones);
-    console.log(newState.insumosAc);
+    if (!insumoPedido) {
+        return null;
+    }
+    if (insumoPedido.stockActual === 0) {
+        return 'rojo';
+    }else if(insumoPedido.minimoCritico<insumoPedido.stockActual){
+        return 'verde';
+    }else return 'amarillo';
 }
+
+export {descontarStock, registrarVenta, reingresoRetornables, ingresarInsumo, agregarProducto,estadoStockActual};
+
+
