@@ -62,6 +62,13 @@
 		ingredientes: [],
 	});
 
+	// Cantidad por insumo, separado del producto en sí. Se guarda como
+	// { insumoId: cantidad } solo para los insumos que el usuario tildó.
+	// Esto es lo que faltaba: antes el <select multiple> guardaba directo
+	// un array de ids de insumo en vez de { insumoId, cantidad }[], y por
+	// eso registrarVenta() no encontraba el insumo real (recibía undefined).
+	let cantidadesPorInsumo: Record<string, number> = $state({});
+
 	let productoFormOpen = $state(false);
 
 	function abrirFormProducto() {
@@ -77,18 +84,38 @@
 			activo: true,
 			ingredientes: [],
 		};
+		cantidadesPorInsumo = {};
+	}
+
+	// Al tildar/destildar un insumo, lo agregamos o sacamos del registro de
+	// cantidades. Si se tilda, arranca en 1 (una unidad) como valor por
+	// defecto razonable, editable después.
+	function toggleInsumo(insumoId: string, marcado: boolean) {
+		if (marcado) {
+			cantidadesPorInsumo[insumoId] = cantidadesPorInsumo[insumoId] ?? 1;
+		} else {
+			delete cantidadesPorInsumo[insumoId];
+			cantidadesPorInsumo = { ...cantidadesPorInsumo };
+		}
 	}
 
 	function confirmarFormProducto() {
 		if (!productoNuevo.nombre.trim()) {
 			return;
 		}
+
+		// Se arma la receta real acá, con la forma que espera Producto:
+		// [{ insumoId, cantidad }], no un array plano de ids.
+		const ingredientesFinales = Object.entries(cantidadesPorInsumo)
+			.filter(([, cantidad]) => cantidad > 0)
+			.map(([insumoId, cantidad]) => ({ insumoId, cantidad }));
+
 		const nuevoProducto: Producto = {
 			id: productoNuevo.id,
 			nombre: productoNuevo.nombre,
 			precio: productoNuevo.precio,
 			activo: productoNuevo.activo,
-			ingredientes: productoNuevo.ingredientes,
+			ingredientes: ingredientesFinales,
 		};
 		estado = { ...estado, productosAc: [...(estado.productosAc || []), nuevoProducto] };
 		guardarEstado(estado);
@@ -100,6 +127,7 @@
 	let formNombreInput: string = $state('');
 	let formUnidadInput: string = $state('');
 	let formRetornableInput: boolean = $state(false);
+	let formStockActualInput: number = $state(0);
 	let formMinimoCriticoInput: number = $state(0);
 	let formEnUsoInput: number = $state(0);
 
@@ -110,6 +138,7 @@
 		formNombreInput = insumo.nombre;
 		formUnidadInput = insumo.unidad;
 		formRetornableInput = insumo.retornable;
+		formStockActualInput = insumo.stockActual;
 		formMinimoCriticoInput = insumo.minimoCritico;
 		formEnUsoInput = insumo.enUso ?? 0;
 		insumoFormOpen = true;
@@ -120,6 +149,7 @@
 		formNombreInput = '';
 		formUnidadInput = '';
 		formRetornableInput = false;
+		formStockActualInput = 0;
 		formMinimoCriticoInput = 0;
 		formEnUsoInput = 0;
 		insumoFormOpen = false;
@@ -130,7 +160,15 @@
 
 		const insumosActualizados = estado.insumosAc.map((i) =>
 			i.id === insumoEnEdicion!.id
-				? { ...i, nombre: formNombreInput, unidad: formUnidadInput, retornable: formRetornableInput, minimoCritico: formMinimoCriticoInput, enUso: formEnUsoInput }
+				? {
+						...i,
+						nombre: formNombreInput,
+						unidad: formUnidadInput,
+						retornable: formRetornableInput,
+						stockActual: formStockActualInput,
+						minimoCritico: formMinimoCriticoInput,
+						enUso: formEnUsoInput,
+					}
 				: i
 		);
 		estado = { ...estado, insumosAc: insumosActualizados };
@@ -186,6 +224,30 @@
 		};
 		guardarEstado(estado);
 		cerrarEdicionProducto();
+	}
+
+	// --- Desactivar producto (HU-01b) ---
+	// No se borra del array (borrado duro): eso rompería transacciones ya
+	// registradas que apuntan a este productoId. Se marca activo=false, y
+	// la página de Caja ya lo filtra con estado.productosAc.filter(p => p.activo).
+	function desactivarProducto(productoId: string) {
+		estado = {
+			...estado,
+			productosAc: estado.productosAc.map((p) =>
+				p.id === productoId ? { ...p, activo: false } : p
+			),
+		};
+		guardarEstado(estado);
+	}
+
+	function reactivarProducto(productoId: string) {
+		estado = {
+			...estado,
+			productosAc: estado.productosAc.map((p) =>
+				p.id === productoId ? { ...p, activo: true } : p
+			),
+		};
+		guardarEstado(estado);
 	}
 
 	// --- Semáforo visual (RF-03) ---
@@ -263,23 +325,46 @@
 		<!-- Productos cards -->
 		{#each estado.productosAc as producto (producto.id)}
 			<div
-				class="mt-4 rounded-xl border-2 p-4 bg-[#17171b] border-amber-300/20"
+				class="mt-4 rounded-xl border-2 p-4 bg-[#17171b] {producto.activo ? 'border-amber-300/20' : 'border-gray-600/30 opacity-60'}"
 			>
 				<div class="flex items-center justify-between">
-					<span class="font-semibold text-lg">{producto.nombre}</span>
+					<span class="font-semibold text-lg">
+						{producto.nombre}
+						{#if !producto.activo}
+							<span class="text-xs text-gray-400 font-normal">(desactivado)</span>
+						{/if}
+					</span>
 					<span class="text-xs text-amber-300">${producto.precio}</span>
 				</div>
 
 				<p class="text-xs text-[#c9c2b4] mt-1">Precio: ${producto.precio}</p>
 
-				<!-- Botón lápiz para editar producto -->
-				<button
-					class="mt-2 text-amber-400 hover:text-amber-300 transition-colors"
-					title="Editar producto"
-					onclick={() => abrirFormEdicionProducto(producto)}
-				>
-					✎
-				</button>
+				<div class="flex items-center gap-3 mt-2">
+					<!-- Botón lápiz para editar producto -->
+					<button
+						class="text-amber-400 hover:text-amber-300 transition-colors"
+						title="Editar producto"
+						onclick={() => abrirFormEdicionProducto(producto)}
+					>
+						✎
+					</button>
+
+					{#if producto.activo}
+						<button
+							class="text-xs px-2 py-1 rounded border border-red-500 text-red-400 hover:bg-red-500/10 transition-colors"
+							onclick={() => desactivarProducto(producto.id)}
+						>
+							Desactivar
+						</button>
+					{:else}
+						<button
+							class="text-xs px-2 py-1 rounded border border-green-500 text-green-400 hover:bg-green-500/10 transition-colors"
+							onclick={() => reactivarProducto(producto.id)}
+						>
+							Reactivar
+						</button>
+					{/if}
+				</div>
 			</div>
 		{/each}
 	</div>
@@ -318,15 +403,30 @@
 
 				<label class="flex flex-col gap-1 text-sm">
 					Ingredientes (insumos que compone este producto)
-					<select
-						bind:value={productoNuevo.ingredientes}
-						multiple
-						class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8] w-full"
-					>
-						{#each estado.insumosAc as insumo}
-							<option value="{insumo.id}">{insumo.nombre} ({insumo.unidad})</option>
+					<div class="flex flex-col gap-1.5 bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 max-h-56 overflow-y-auto">
+						{#each estado.insumosAc as insumo (insumo.id)}
+							<div class="flex items-center gap-2">
+								<input
+									type="checkbox"
+									id={`ing-${insumo.id}`}
+									checked={insumo.id in cantidadesPorInsumo}
+									onchange={(e) => toggleInsumo(insumo.id, e.currentTarget.checked)}
+								/>
+								<label for={`ing-${insumo.id}`} class="flex-1 text-sm">
+									{insumo.nombre} ({insumo.unidad})
+								</label>
+								{#if insumo.id in cantidadesPorInsumo}
+									<input
+										type="number"
+										min="0"
+										step="0.01"
+										class="w-20 bg-[#17171b] border border-[#3a3a3e] rounded px-2 py-1 text-sm text-[#f5f0e8]"
+										bind:value={cantidadesPorInsumo[insumo.id]}
+									/>
+								{/if}
+							</div>
 						{/each}
-					</select>
+					</div>
 				</label>
 
 				<div class="flex gap-3 mt-4">
@@ -381,37 +481,50 @@
 					</select>
 				</label>
 
+				<div class="flex gap-3">
+					<label class="flex flex-col gap-1 text-sm flex-1">
+						Stock actual
+						<input
+							type="number"
+							bind:value={formStockActualInput}
+							min="0"
+							class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]"
+							placeholder="0"
+						/>
+					</label>
+
+					<label class="flex flex-col gap-1 text-sm flex-1">
+						Mínimo crítico
+						<input
+							type="number"
+							bind:value={formMinimoCriticoInput}
+							min="0"
+							class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]"
+							placeholder="0"
+						/>
+					</label>
+				</div>
+
 				<label class="flex flex-col gap-1 text-sm">
-					Stock actual
-					<input
-						type="number"
-						bind:value={formMinimoCriticoInput}
-						min="0"
-						class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]"
-						placeholder="Mínimo crítico"
-					/>
+					¿Es retornable?
+					<select bind:value={formRetornableInput} class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]">
+						<option value={true}>Sí</option>
+						<option value={false}>No</option>
+					</select>
 				</label>
 
-				{#if insumoEnEdicion.retornable}
+				{#if formRetornableInput}
 					<label class="flex flex-col gap-1 text-sm">
-						¿Es retornable?
-						<select bind:value={formRetornableInput} class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]">
-							<option value="true">Sí</option>
-							<option value="false">No</option>
-						</select>
+						En uso (unidades prestadas actualmente)
+						<input
+							type="number"
+							bind:value={formEnUsoInput}
+							min="0"
+							class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]"
+							placeholder="0"
+						/>
 					</label>
 				{/if}
-
-				<label class="flex flex-col gap-1 text-sm">
-					En uso (solo retornables)
-					<input
-						type="number"
-						bind:value={formEnUsoInput}
-						min="0"
-						class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]"
-						placeholder="0"
-					/>
-				</label>
 
 				<div class="flex gap-3 mt-4">
 					<button
@@ -466,8 +579,8 @@
 				<label class="flex flex-col gap-1 text-sm">
 					Activo
 					<select bind:value={productoEdicion.activo} class="bg-[#0a0a0c] border border-[#3a3a3e] rounded-lg px-3 py-2 text-[#f5f0e8]">
-						<option value="true">Sí</option>
-						<option value="false">No</option>
+						<option value={true}>Sí</option>
+						<option value={false}>No</option>
 					</select>
 				</label>
 
